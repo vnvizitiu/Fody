@@ -5,9 +5,8 @@ public partial class InnerWeaver
 {
     public virtual void WriteModule()
     {
-        var assemblyPath = AssemblyFilePath;
         var stopwatch = Stopwatch.StartNew();
-        Logger.LogDebug($"  Writing assembly to '{assemblyPath}'.");
+        Logger.LogDebug($"  Writing assembly to '{AssemblyFilePath}'.");
 
         var parameters = new WriterParameters
             {
@@ -15,8 +14,8 @@ public partial class InnerWeaver
                 WriteSymbols = true,
                 SymbolWriterProvider = debugWriterProvider,
             };
-        ModuleDefinition.Write(assemblyPath, parameters);
+
+        ModuleDefinition.Write(AssemblyFilePath, parameters);
         Logger.LogDebug($"  Finished writing assembly {stopwatch.ElapsedMilliseconds}ms.");
     }
-
 }

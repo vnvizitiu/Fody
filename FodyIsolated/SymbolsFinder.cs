@@ -14,31 +14,30 @@ public partial class InnerWeaver
 
     void GetSymbolProviders()
     {
-		FindPdb();
+        FindPdb();
 
         FindMdb();
 
-        ThrowIfFoundBoth();
+        ChooseNewest();
 
         if (pdbFound)
-		{
+        {
             debugReaderProvider = new PdbReaderProvider();
             debugWriterProvider = new PdbWriterProvider();
             return;
-		}
+        }
 
         if (mdbFound)
-		{
-		    debugReaderProvider = new MdbReaderProvider();
+        {
+            debugReaderProvider = new MdbReaderProvider();
             debugWriterProvider = new MdbWriterProvider();
             return;
-		}
+        }
 
+        throw new WeavingException("Found no debug symbols.");
+    }
 
-        Logger.LogDebug("Found no debug symbols.");
-	}
-
-    void ThrowIfFoundBoth()
+    void ChooseNewest()
     {
         if (!pdbFound || !mdbFound)
         {

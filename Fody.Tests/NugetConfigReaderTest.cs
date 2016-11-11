@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using NUnit.Framework;
 
@@ -20,6 +19,7 @@ public class NugetConfigReaderTest
         var packagesPathFromConfig = NugetConfigReader.GetPackagesPathFromConfig(solutionDir);
         Assert.IsTrue(packagesPathFromConfig.EndsWith("FromNugetConfig"));
     }
+
     [Test]
     public void WithNugetConfigInTree()
     {

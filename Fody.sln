@@ -21,11 +21,13 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nuget", "NuGet\Nuget.csproj
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WeaverNugetTemplates", "WeaverNugetTemplates", "{215FCA55-BC62-4BAD-98EF-7E42079B04CF}"
 	ProjectSection(SolutionItems) = preProject
-		WeaverNugetTemplates\install.ps = WeaverNugetTemplates\install.ps
-		WeaverNugetTemplates\uninstall.ps = WeaverNugetTemplates\uninstall.ps
+		WeaverNugetTemplates\install.ps1 = WeaverNugetTemplates\install.ps1
+		WeaverNugetTemplates\uninstall.ps1 = WeaverNugetTemplates\uninstall.ps1
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NugetCecil", "NuGetCecil\NugetCecil.csproj", "{4D267DED-10CA-4CF4-84E9-C7945393F86F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DummyAssembly", "DummyAssembly\DummyAssembly.csproj", "{D95530D4-5646-4156-B58E-F2C5D5FA03CC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -127,6 +129,18 @@ Global
 		{4D267DED-10CA-4CF4-84E9-C7945393F86F}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
 		{4D267DED-10CA-4CF4-84E9-C7945393F86F}.Release|Mixed Platforms.Build.0 = Release|Any CPU
 		{4D267DED-10CA-4CF4-84E9-C7945393F86F}.Release|x86.ActiveCfg = Release|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Debug|x86.Build.0 = Debug|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Release|Mixed Platforms.Build.0 = Release|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Release|x86.ActiveCfg = Release|Any CPU
+		{D95530D4-5646-4156-B58E-F2C5D5FA03CC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
