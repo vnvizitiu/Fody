@@ -6,13 +6,10 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.Remoting;
 using Mono.Cecil;
-using Mono.Cecil.Cil;
 using Mono.Cecil.Mdb;
 using Mono.Cecil.Pdb;
 using Mono.Cecil.Rocks;
 using FieldAttributes = Mono.Cecil.FieldAttributes;
-using MethodAttributes = Mono.Cecil.MethodAttributes;
-using ParameterAttributes = Mono.Cecil.ParameterAttributes;
 using TypeAttributes = Mono.Cecil.TypeAttributes;
 
 public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
@@ -31,6 +28,7 @@ public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
     bool cancelRequested;
     List<WeaverHolder> weaverInstances = new List<WeaverHolder>();
     Action cancelDelegate;
+    public IAssemblyResolver assemblyResolver;
 
     Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
     {
@@ -45,11 +43,11 @@ public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
         }
         if (assemblyName == "Mono.Cecil.Pdb")
         {
-            return typeof(PdbReader).Assembly;
+            return typeof(PdbReaderProvider).Assembly;
         }
         if (assemblyName == "Mono.Cecil.Mdb")
         {
-            return typeof(MdbReader).Assembly;
+            return typeof(MdbReaderProvider).Assembly;
         }
         foreach (var weaverPath in Weavers.Select(x => x.AssemblyPath))
         {
@@ -80,23 +78,18 @@ public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
         {
             SplitUpReferences();
             GetSymbolProviders();
+            assemblyResolver = new AssemblyResolver(ReferenceDictionary, Logger, SplitReferences);
             ReadModule();
             AppDomain.CurrentDomain.AssemblyResolve += assemblyResolve;
             InitialiseWeavers();
             ExecuteWeavers();
             AddWeavingInfo();
-            AddProcessedFlag();
             FindStrongNameKey();
             WriteModule();
+            ModuleDefinition?.Dispose();
+            SymbolStream?.Dispose();
             ExecuteAfterWeavers();
             DisposeWeavers();
-
-            if (weaverInstances
-                .Any(_ => _.WeaverDelegate.AfterWeavingExecute != null))
-            {
-                ReadModule();
-                WriteModule();
-            }
         }
         catch (Exception exception)
         {
@@ -107,6 +100,7 @@ public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
         {
             ModuleDefinition?.Dispose();
             SymbolStream?.Dispose();
+            assemblyResolver?.Dispose();
         }
     }
 
@@ -115,11 +109,6 @@ public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
         cancelRequested = true;
         var action = cancelDelegate;
         action?.Invoke();
-    }
-
-    void AddProcessedFlag()
-    {
-        ModuleDefinition.Types.Add(new TypeDefinition(null, "ProcessedByFody", TypeAttributes.NotPublic | TypeAttributes.Abstract | TypeAttributes.Interface));
     }
 
     void InitialiseWeavers()
@@ -133,7 +122,7 @@ public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
             Logger.LogDebug($"Weaver '{weaverConfig.AssemblyPath}'.");
             Logger.LogDebug("  Initializing weaver");
             var assembly = LoadAssembly(weaverConfig.AssemblyPath);
-
+            VerifyMinCecilVersion(assembly);
             var weaverType = assembly.FindType(weaverConfig.TypeName);
 
             var delegateHolder = weaverType.GetDelegateHolderFromCache();
@@ -148,6 +137,27 @@ public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
 
             SetProperties(weaverConfig, weaverInstance, delegateHolder);
         }
+    }
+
+    void VerifyMinCecilVersion(Assembly assembly)
+    {
+        var cecilReference = assembly.GetReferencedAssemblies()
+            .SingleOrDefault(x => x.Name == "Mono.Cecil");
+
+        if (cecilReference == null)
+        {
+            throw new WeavingException($"Expected the weaver '{assembly}' to reference Mono.Cecil.dll. {GetNugetError()}");
+        }
+        var minCecilVersion = new Version(0, 10);
+        if (cecilReference.Version < minCecilVersion)
+        {
+            throw new WeavingException($"The weaver assembly '{assembly}' references an out of date version of Mono.Cecil.dll (cecilReference.Version). At least version {minCecilVersion} is expected. {GetNugetError()}");
+        }
+    }
+
+    string GetNugetError()
+    {
+        return $"The weaver needs to add a NuGet reference to FodyCecil version {GetType().Assembly.GetName().Version.Major}.0.";
     }
 
     void ExecuteWeavers()
@@ -189,64 +199,33 @@ public partial class InnerWeaver : MarshalByRefObject, IInnerWeaver
         Logger.LogDebug("  Adding weaving info");
         var startNew = Stopwatch.StartNew();
 
-        // Create 'FodyGeneratedCodeAttribute' which will be used to decorate
-        // our info class
-        var ci = typeof(Attribute).GetConstructors(BindingFlags.NonPublic | BindingFlags.CreateInstance | BindingFlags.Instance).First(c => c.IsFamily);
-        var attrType = new TypeDefinition(null, "FodyGeneratedCodeAttribute",
-            TypeAttributes.Class | TypeAttributes.NotPublic)
-        {
-            BaseType = ModuleDefinition.ImportReference(typeof(Attribute))
-        };
-        attrType.Fields.Add(new FieldDefinition("Version", FieldAttributes.Assembly | FieldAttributes.InitOnly, ModuleDefinition.TypeSystem.String));
+        var typeDefinition = new TypeDefinition(null, "ProcessedByFody", TypeAttributes.NotPublic | TypeAttributes.Class, ModuleDefinition.TypeSystem.Object);
+        ModuleDefinition.Types.Add(typeDefinition);
 
-        var
-        md = new MethodDefinition(".ctor",
-            MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.SpecialName |
-            MethodAttributes.RTSpecialName, ModuleDefinition.TypeSystem.Void);
-
-        // Add a parameter which should be called in
-        // attribute's ctor
-        md.Parameters.Add(new ParameterDefinition("version", ParameterAttributes.None, ModuleDefinition.TypeSystem.String));
-
-        // Recreate MSIL which should be called when
-        // calling a ctor
-        md.Body.Instructions.Add(Instruction.Create(OpCodes.Ldarg_0));
-        md.Body.Instructions.Add(Instruction.Create(OpCodes.Call,
-            ModuleDefinition.ImportReference(ci)));
-        md.Body.Instructions.Add(Instruction.Create(OpCodes.Nop));
-        md.Body.Instructions.Add(Instruction.Create(OpCodes.Nop));
-        md.Body.Instructions.Add(Instruction.Create(OpCodes.Ldarg_0));
-        md.Body.Instructions.Add(Instruction.Create(OpCodes.Ldarg_1));
-        md.Body.Instructions.Add(Instruction.Create(OpCodes.Stfld, attrType.Fields.First()));
-        md.Body.Instructions.Add(Instruction.Create(OpCodes.Ret));
-
-        attrType.Methods.Add(md);
-        ModuleDefinition.Types.Add(attrType);
-
-        var attr = new CustomAttribute(md);
-        attr.ConstructorArguments.Add(new CustomAttributeArgument(ModuleDefinition.TypeSystem.String,
-            FileVersionInfo.GetVersionInfo(typeof(IInnerWeaver).Assembly.Location).FileVersion));
-
-        var td = new TypeDefinition(null, "FodyWeavingResults", TypeAttributes.Class | TypeAttributes.NotPublic);
-        td.CustomAttributes.Add(attr);
+        AddVersionField(typeof(IInnerWeaver).Assembly.Location, "FodyVersion", typeDefinition);
 
         foreach (var weaver in weaverInstances)
         {
-            var weaverVersion = FileVersionInfo.GetVersionInfo(weaver.Config.AssemblyPath);
-            var fd = new FieldDefinition(weaver.Config.AssemblyName.Replace(".", string.Empty),
-                FieldAttributes.Assembly | FieldAttributes.Literal | FieldAttributes.HasDefault,
-                ModuleDefinition.ImportReference(typeof(string)))
-            {
-                Constant = weaverVersion.FileVersion
-            };
-
-            td.Fields.Add(fd);
+            var configAssemblyPath = weaver.Config.AssemblyPath;
+            var name = weaver.Config.AssemblyName.Replace(".", string.Empty);
+            AddVersionField(configAssemblyPath, name, typeDefinition);
         }
-
-        ModuleDefinition.Types.Add(td);
 
         var finishedMessage = $"  Finished in {startNew.ElapsedMilliseconds}ms {Environment.NewLine}";
         Logger.LogDebug(finishedMessage);
+    }
+
+    void AddVersionField(string configAssemblyPath, string name, TypeDefinition typeDefinition)
+    {
+        var weaverVersion = FileVersionInfo.GetVersionInfo(configAssemblyPath);
+        var fieldAttributes = FieldAttributes.Assembly | FieldAttributes.Literal | FieldAttributes.Static | FieldAttributes.HasDefault;
+        var systemString = ModuleDefinition.TypeSystem.String;
+        var field = new FieldDefinition(name, fieldAttributes, systemString)
+        {
+            Constant = weaverVersion.FileVersion
+        };
+
+        typeDefinition.Fields.Add(field);
     }
 
     void ExecuteAfterWeavers()

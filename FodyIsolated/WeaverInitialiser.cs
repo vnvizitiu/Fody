@@ -14,15 +14,15 @@ public partial class InnerWeaver
         }
 
         @delegate.SetModuleDefinition(weaverInstance, ModuleDefinition);
-        @delegate.SetAssemblyResolver(weaverInstance, this);
+        @delegate.SetAssemblyResolver(weaverInstance, assemblyResolver);
         @delegate.SetAssemblyFilePath(weaverInstance, AssemblyFilePath);
         @delegate.SetAddinDirectoryPath(weaverInstance, Path.GetDirectoryName(weaverEntry.AssemblyPath));
         @delegate.SetReferences(weaverInstance, References);
         @delegate.SetReferenceCopyLocalPaths(weaverInstance, ReferenceCopyLocalPaths);
-		@delegate.SetSolutionDirectoryPath(weaverInstance, SolutionDirectoryPath);
+        @delegate.SetSolutionDirectoryPath(weaverInstance, SolutionDirectoryPath);
         @delegate.SetProjectDirectoryPath(weaverInstance, ProjectDirectoryPath);
-		@delegate.SetLogDebug(weaverInstance, s => Logger.LogDebug("  " + s));
-		@delegate.SetLogInfo(weaverInstance, s => Logger.LogInfo("  " + s));
+        @delegate.SetLogDebug(weaverInstance, s => Logger.LogDebug("  " + s));
+        @delegate.SetLogInfo(weaverInstance, s => Logger.LogInfo("  " + s));
         @delegate.SetLogMessage(weaverInstance, (s, importance) => Logger.LogMessage("  " + s, importance));
         @delegate.SetLogWarning(weaverInstance, Logger.LogWarning);
         @delegate.SetLogWarningPoint(weaverInstance, LogWarningPoint);

@@ -36,7 +36,6 @@
   </Choose>
   <PropertyGroup>
     <ProjectWeaverXml>$(ProjectDir)FodyWeavers.xml</ProjectWeaverXml>
-    <IntermediateDir>$(ProjectDir)$(IntermediateOutputPath)</IntermediateDir>
     <FodySignAssembly Condition="$(FodySignAssembly) == '' Or $(FodySignAssembly) == '*Undefined*'">$(SignAssembly)</FodySignAssembly>
     <FodyPath Condition="$(FodyPath) == '' Or $(FodyPath) == '*Undefined*'">$(MSBuildThisFileDirectory)..\..\</FodyPath>
   </PropertyGroup>
@@ -45,7 +44,7 @@
       AssemblyFile="$(FodyPath)\Fody.dll" />
   <Target
       AfterTargets="AfterCompile"
-      Condition="Exists(@(IntermediateAssembly))"
+      Condition="Exists('@(IntermediateAssembly)')"
       Name="FodyTarget"
       DependsOnTargets="$(FodyDependsOnTargets)"
       Inputs="@(IntermediateAssembly->'%(FullPath)');$(FodyKeyFilePath);$(ProjectWeaverXml)"
@@ -53,7 +52,7 @@
 
     <Fody.WeavingTask
           AssemblyPath="@(IntermediateAssembly)"
-          IntermediateDir="$(IntermediateDir)"
+          IntermediateDir="$(ProjectDir)$(IntermediateOutputPath)"
           KeyFilePath="$(FodyKeyFilePath)"
           NuGetPackageRoot="$(NuGetPackageRoot)"
           ProjectDirectory="$(ProjectDir)"
@@ -62,6 +61,7 @@
           SignAssembly="$(FodySignAssembly)"
           ReferenceCopyLocalPaths="@(ReferenceCopyLocalPaths)"
           DefineConstants="$(DefineConstants)"
+          PackageDefinitions="@(PackageDefinitions->'%(ResolvedPath)')"
       >
 
       <Output 
@@ -72,7 +72,7 @@
     <PropertyGroup>
       <FodyWeavingTargetWasRun>True</FodyWeavingTargetWasRun>
     </PropertyGroup>
-      
+
   </Target>
 
 
@@ -80,19 +80,19 @@
     TaskName="Fody.VerifyTask"
     AssemblyFile="$(FodyPath)\Fody.dll" />
   <Target Condition="'$(NCrunch)' != '1' And ('$(FodyWeavingTargetWasRun)' == 'True')"
-      AfterTargets="FodyTarget"
+      AfterTargets="AfterBuild"
       Name="FodyVerifyTarget"
       DependsOnTargets="$(FodyVerifyDependsOnTargets)">
 
     <Fody.VerifyTask
           ProjectDirectory="$(ProjectDir)"
-          TargetPath="@(IntermediateAssembly->'%(FullPath)')"
+          TargetPath="$(TargetPath)"
           SolutionDir="$(FodySolutionDir)"
           DefineConstants="$(DefineConstants)"
       />
   </Target>
-  
-  
+
+
   <!--Support for ncrunch-->
   <ItemGroup  Condition="'$(NCrunch)' == '1'">
     <None Include="$(FodyPath)\*.*" />
