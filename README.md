@@ -1,3 +1,6 @@
+[![Chat on Gitter](https://img.shields.io/gitter/room/fody/fody.svg?style=flat)](https://gitter.im/Fody/Fody)
+[![NuGet Status](http://img.shields.io/nuget/v/Fody.svg?style=flat)](https://www.nuget.org/packages/Fody/)
+
 ![Icon](https://raw.github.com/Fody/Fody/master/Icons/package_icon.png)
 
 
@@ -11,7 +14,36 @@
 Manipulating the IL of an assembly as part of a build requires a significant amount of plumbing code. This plumbing code involves knowledge of both the MSBuild and Visual Studio APIs. Fody attempts to eliminate that plumbing code through an extensible add-in model.
 
 
-## The nuget package  [![NuGet Status](https://img.shields.io/nuget/v/Fody.svg?style=flat)](https://www.nuget.org/packages/Fody/)
+## Not Supported
+
+ * Projects using the [project.json](https://docs.microsoft.com/en-us/nuget/schema/project-json).
+ * Projects using the xproj.
+ * Projects mixing the old `.csproj` format with new [`<PackageReference>` nodes](https://docs.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files#adding-a-packagereference).
+
+To tell the difference bewteen the old and new csproj formats.
+
+The old format starts with
+
+```
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+```
+
+The new format starts with
+
+```
+<Project Sdk="Microsoft.NET.Sdk">
+```
+
+For all these scenarios is it instead recommended to move to the new VS 2017 SDK style projects.
+
+References
+
+ * [Bye-Bye Project.json and .xproj and welcome back .csproj](http://www.talkingdotnet.com/bye-bye-project-json-xproj-welcome-back-csproj/)
+ * [Project.json to MSBuild conversion guide](http://www.natemcmaster.com/blog/2017/01/19/project-json-to-csproj/)
+ * [Migrate from project.json to new VS 2017 SDK style projects](https://docs.microsoft.com/en-us/dotnet/core/tools/dotnet-migrate)
+
+
+## The nuget package
 
 https://www.nuget.org/packages/Fody/
 
@@ -69,6 +101,7 @@ The name "Fody" comes from the small birds that belong to the weaver family [Plo
   * [AssertMessage](https://github.com/Fody/AssertMessage) Generates 'message' from sourcecode and adds it to assertion.
   * [AsyncErrorHandler](https://github.com/Fody/AsyncErrorHandler) Integrates error handling into async and TPL code.
   * [AutoDependencyProperty](http://blog.angeloflogic.com/2014/12/no-more-dependencyproperty-with.html) Generates WPF DependencyProperty boilerplate from automatic C# properties.
+  * [AutoProperties](https://github.com/tom-englert/AutoProperties.Fody) Gain access to the backing field of auto properties.
   * [AutoDI](https://github.com/Keboo/AutoDI) A framework for simplifying the creation of objects that only partially depend on resources in your favorite DI container.
   * [AutoLazy](https://github.com/bcuff/AutoLazy) Automatically implements the double-checked locking pattern on specified properties and methods.
   * [BasicFodyAddin](https://github.com/Fody/BasicFodyAddin) A simple project meant to illustrate how to build an addin.

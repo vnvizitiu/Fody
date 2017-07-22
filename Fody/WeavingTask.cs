@@ -4,6 +4,7 @@ using Microsoft.Build.Utilities;
 
 namespace Fody
 {
+    using System;
 
     public class WeavingTask : Task, ICancelableTask
     {
@@ -41,6 +42,10 @@ namespace Fody
 
         public string[] PackageDefinitions { get; set; }
 
+        //TODO move back to DebugSymbols when it resolves to true in release mode
+        public bool DebugSymbols { get; set; }
+        public string DebugType { get; set; }
+
         public override bool Execute()
         {
             var referenceCopyLocalPaths = ReferenceCopyLocalPaths.Select(x => x.ItemSpec).ToList();
@@ -61,7 +66,8 @@ namespace Fody
                 ReferenceCopyLocalPaths = referenceCopyLocalPaths,
                 DefineConstants = defineConstants,
                 NuGetPackageRoot = NuGetPackageRoot,
-                PackageDefinitions = PackageDefinitions?.ToList()
+                PackageDefinitions = PackageDefinitions?.ToList(),
+                DebugSymbols = DebugSymbolsProduced()
             };
             var success = processor.Execute();
             if (success)
@@ -71,6 +77,13 @@ namespace Fody
             }
 
             return success;
+        }
+
+        bool DebugSymbolsProduced()
+        {
+            return
+                !string.Equals(DebugType, "none", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(DebugType, "embedded", StringComparison.OrdinalIgnoreCase);
         }
 
         public void Cancel()

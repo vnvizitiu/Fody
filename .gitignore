@@ -13,6 +13,8 @@
 *.ncrunchsolution
 *.ncrunchproject
 
+.idea/
+
 # Build results
 [Dd]ebug/
 [Rr]elease/
@@ -35,10 +37,11 @@
 *.dotCover
 *test-results*
 
+.vs/
 
 ##  If you have NuGet Package Restore enabled, uncomment this
 packages/
-ForSample/
+ForIntegration/
 NuGetCecilBuild/
 NugetBuild/
 ChocolateyNuGetBuild/

@@ -14,6 +14,12 @@ public partial class InnerWeaver
 
     void GetSymbolProviders()
     {
+        if (!DebugSymbols)
+        {
+            Logger.LogInfo("DebugSymbols disabled. No symbols file will be processed.");
+            return;
+        }
+
         FindPdb();
 
         FindMdb();
