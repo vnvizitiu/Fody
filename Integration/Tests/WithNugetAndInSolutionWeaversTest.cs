@@ -1,25 +1,30 @@
 ﻿using System;
-using NUnit.Framework;
+using Xunit;
 using WithNugetAndInSolutionWeavers;
 
-[TestFixture]
 public class WithNugetAndInSolutionWeaversTest
 {
-    [Test]
+    [Fact]
     public void EnsureTypeInjectedByModuleWeaver()
     {
-        Assert.IsNotNull(Type.GetType("Weavers.TypeInjectedByModuleWeaver, WithNugetAndInSolutionWeavers"));
+        Assert.NotNull(Type.GetType("Weavers.TypeInjectedByModuleWeaver, WithNugetAndInSolutionWeavers"));
     }
 
-    [Test]
+    [Fact]
     public void EnsureTypeInjectedByNamedWeaver()
     {
-        Assert.IsNotNull(Type.GetType("Weavers.TypeInjectedByNamedWeaver, WithNugetAndInSolutionWeavers"));
+        Assert.NotNull(Type.GetType("Weavers.TypeInjectedByNamedWeaver, WithNugetAndInSolutionWeavers"));
     }
 
-    [Test]
+    [Fact]
+    public void EnsureTypeInjectedByNamedWeaverFromBase()
+    {
+        Assert.NotNull(Type.GetType("Weavers.TypeInjectedByNamedWeaverFromBase, WithNugetAndInSolutionWeavers"));
+    }
+
+    [Fact]
     public void EnsureTypeChangedByNugetWeaver()
     {
-        Assert.IsTrue(typeof(Class1).GetMethod("Method").IsVirtual);
+        Assert.True(typeof(Class1).GetMethod("Method").IsVirtual);
     }
 }

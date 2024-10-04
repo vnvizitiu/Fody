@@ -1,0 +1,141 @@
+variables:
+  buildArgs: '-c Release'
+  testArgs: '$(buildArgs) -f net6.0 --no-build'
+
+resources:
+  repositories:
+    - repository: FodyIntegrationTest
+      type: github
+      endpoint: Fody
+      name: tom-englert/FodyIntegrationTest
+
+jobs:
+- job: 'Master'
+  pool:
+    vmImage: 'windows-2022'
+  steps:
+
+  - task: NuGetToolInstaller@1
+    inputs:
+      versionSpec: 
+
+  - powershell: |
+     (new-object Net.WebClient).DownloadString("https://raw.github.com/tom-englert/BuildScripts/master/BuildScripts.ps1") | iex
+     Project-SetVersion "Directory.Build.props"  | Build-AppendVersionToBuildNumber
+    displayName: 'Patch version'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'Build Fody'
+    inputs:
+      command: 'build'
+      projects: 'Fody.sln'
+      arguments: $(buildArgs)
+
+  - task: DotNetCoreCLI@2
+    displayName: 'Build Integration'
+    inputs:
+      command: 'build'
+      projects: 'Integration\Integration.sln'
+      arguments: $(buildArgs)
+
+  - task: DotNetCoreCLI@2
+    displayName: 'Test Fody'
+    inputs:
+      command: 'test'
+      projects: 'Fody.sln'
+      arguments: $(buildArgs)
+
+  - task: DotNetCoreCLI@2
+    displayName: 'Test Integration'
+    inputs:
+      command: 'test'
+      projects: 'Integration\Integration.sln'
+      arguments: $(buildArgs)
+
+  - task: CopyFiles@2
+    displayName: 'Copy Files to: $(build.artifactstagingdirectory)'
+    inputs:
+      SourceFolder: '$(system.defaultworkingdirectory)'
+      Contents: 'nugets\*.nupkg'
+      TargetFolder: '$(build.artifactstagingdirectory)'
+      flattenFolders: true
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact: nuget'
+    inputs:
+      PathtoPublish: '$(build.artifactstagingdirectory)'
+      ArtifactName: nuget
+
+
+- job: 'DotnetBuild'
+  strategy:
+   matrix:
+     'Mac':
+       image: 'macOS-latest'
+     'Linux':
+       image: 'ubuntu-latest'
+  pool:
+    vmImage: $(image)
+  steps:
+  - task: DotNetCoreCLI@2
+    displayName: 'Build Fody'
+    inputs:
+      command: 'build'
+      projects: 'Fody.sln'
+      arguments: $(buildArgs)
+  - task: DotNetCoreCLI@2
+    displayName: 'Test Fody'
+    enabled: false # fody tests currently do not run on mac/linux
+    inputs:
+      command: 'test'
+      projects: 'Fody.sln'
+      arguments: $(testArgs)
+  - task: DotNetCoreCLI@2
+    displayName: 'Build Integration'
+    inputs:
+      command: 'build'
+      projects: 'Integration/Integration.sln'
+      arguments: $(buildArgs)
+  - task: DotNetCoreCLI@2
+    displayName: 'Test Integration'
+    inputs:
+      command: 'test'
+      projects: 'Integration/Integration.sln'
+      arguments: $(testArgs)
+
+
+- job: 'Integration'
+  dependsOn: 'Master'
+  strategy:
+   matrix:
+     'VS2022':
+       image: 'windows-2022'
+       vsVersion: '17.0'
+     'VS2019':
+       image: 'windows-2019'
+       vsVersion: '16.0'
+  pool:
+    vmImage: $(image)
+  steps:
+  - checkout: self
+  - checkout: FodyIntegrationTest
+  - task: DownloadBuildArtifacts@0
+    inputs:
+      buildType: 'current'
+      downloadType: 'single'
+      artifactName: 'Nuget'
+      downloadPath: '.\FodyIntegrationTest'
+  - task: VSBuild@1
+    displayName: 'Build solution'
+    inputs:
+      solution: 'FodyIntegrationTest\FodyIntegrationTest.sln'
+      vsVersion: $(vsVersion)
+      msbuildArgs: '-restore'
+      platform: 'any cpu'
+      configuration: 'release'
+  - task: DotNetCoreCLI@2
+    displayName: 'Test'
+    inputs:
+      command: 'test'
+      projects: 'FodyIntegrationTest\Test\Test.csproj'
+      arguments: --no-build -c Release

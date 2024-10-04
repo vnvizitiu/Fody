@@ -1,45 +1,40 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using MSMessageEnum = Microsoft.Build.Framework.MessageImportance;
-
 public partial class Processor
 {
-    public string AssemblyFilePath;
-    public string IntermediateDirectory;
-    public string KeyFilePath;
+    public string AssemblyFilePath = null!;
+    public string IntermediateDirectory = null!;
+    public string? KeyFilePath;
     public bool SignAssembly;
-    public string ProjectDirectory;
-    public string References;
-    public string SolutionDirectory;
-    public string NuGetPackageRoot;
-    public bool DebugSymbols;
-    public List<string> ReferenceCopyLocalPaths;
-    public List<string> PackageDefinitions;
-    public List<string> DefineConstants;
-    public List<string> ConfigFiles;
-    IInnerWeaver innerWeaver;
+    public bool DelaySign;
+    public string ProjectDirectory = null!;
+    public string ProjectFilePath = null!;
+    public string? DocumentationFilePath;
+    public string References = null!;
+    public string SolutionDirectory = null!;
+    public List<WeaverEntry> Weavers = null!;
+    public string? WeaverConfiguration;
 
-    AddinFinder addinFinder;
-    static Dictionary<string, AppDomain> solutionDomains = new Dictionary<string, AppDomain>(StringComparer.OrdinalIgnoreCase);
+    public List<string> ReferenceCopyLocalPaths = null!;
+    public List<string> RuntimeCopyLocalPaths = null!;
+    public List<string> DefineConstants = null!;
 
-    public BuildLogger Logger;
-    static object locker;
+    public List<WeaverConfigFile> ConfigFiles = null!;
+    public Dictionary<string, WeaverConfigEntry> ConfigEntries = null!;
+    public bool GenerateXsd;
+    IInnerWeaver? innerWeaver;
 
-    public ContainsTypeChecker ContainsTypeChecker = new ContainsTypeChecker();
+    static Dictionary<AssemblyPathSet, IsolatedAssemblyLoadContext> loadContexts = new();
 
-    static Processor()
-    {
-        locker = new object();
+    public ILogger Logger = null!;
+    static readonly object mutex = new();
+
+    static Processor() =>
         DomainAssemblyResolver.Connect();
-    }
 
     public virtual bool Execute()
     {
+        var assembly = typeof(Processor).Assembly;
 
-        Logger.LogInfo($"Fody (version {typeof (Processor).Assembly.GetName().Version}) Executing");
+        Logger.LogInfo($"Fody (version {assembly.GetName().Version} @ {assembly.CodeBase}) Executing");
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -55,128 +50,124 @@ public partial class Processor
         }
         finally
         {
-            Logger.LogInfo($"  Finished Fody {stopwatch.ElapsedMilliseconds}ms.");
+            stopwatch.Stop();
+            Logger.LogInfo($"Finished Fody {stopwatch.ElapsedMilliseconds}ms.");
         }
     }
 
     void Inner()
     {
+        ValidateSolutionPath();
         ValidateProjectPath();
-
         ValidateAssemblyPath();
 
-        ConfigFiles = ConfigFileFinder.FindWeaverConfigs(SolutionDirectory, ProjectDirectory, Logger);
+        ConfigFiles = ConfigFileFinder.FindWeaverConfigFiles(WeaverConfiguration, SolutionDirectory, ProjectDirectory, Logger).ToList();
 
-        if (!ShouldStartSinceFileChanged())
+        if (!ConfigFiles.Any())
         {
-            if (!CheckForWeaversXmlChanged())
-            {
-
-                FindWeavers();
-
-                if (WeaversHistory.HasChanged(Weavers.Select(x => x.AssemblyPath)))
-                {
-                    Logger.LogError("A re-build is required because a weaver has changed.");
-                }
-            }
-            return;
+            ConfigFiles = [ConfigFileFinder.GenerateDefault(ProjectDirectory, Weavers, GenerateXsd)];
+            Logger.LogWarning($"Could not find a FodyWeavers.xml file at the project level ({ProjectDirectory}). A default file has been created. Please review the file and add it to your project.");
         }
 
-        ValidateSolutionPath();
+        ConfigEntries = ConfigFileFinder.ParseWeaverConfigEntries(ConfigFiles);
 
-        FindWeavers();
+        var extraEntries = ConfigEntries.Values
+            .Where(entry => !entry.ConfigFile.AllowExtraEntries && !Weavers.Any(weaver => string.Equals(weaver.ElementName, entry.ElementName)))
+            .ToArray();
+
+        const string missingWeaversHelp = "Add the desired weavers via their nuget package.";
+
+        if (extraEntries.Any())
+        {
+            throw new WeavingException($"No weavers found for the configuration entries {string.Join(", ", extraEntries.Select(_ => _.ElementName))}. " + missingWeaversHelp);
+        }
 
         if (Weavers.Count == 0)
         {
-            Logger.LogWarning(@"No configured weavers. It is possible no weavers have been installed or a weaver has been installed into a project type that does not support install.ps1. It may be necessary to manually add that weaver to FodyWeavers.xm;. eg.
-<Weavers>
-    <WeaverName/>
-</Weavers>
-see https://github.com/Fody/Fody/wiki/SampleUsage");
-            return;
-        }
-        lock (locker)
-        {
-            ExecuteInOwnAppDomain();
+            throw new WeavingException("No weavers found. " + missingWeaversHelp);
         }
 
-        FlushWeaversXmlHistory();
-    }
-
-
-    void FindWeavers()
-    {
-        var stopwatch = Stopwatch.StartNew();
-        Logger.LogDebug("Finding weavers");
-        ReadProjectWeavers();
-        addinFinder = new AddinFinder
-            {
-                Logger = Logger,
-                SolutionDirectoryPath = SolutionDirectory,
-                NuGetPackageRoot = NuGetPackageRoot,
-                PackageDefinitions = PackageDefinitions,
-            };
-        addinFinder.FindAddinDirectories();
-
-        FindWeaverProjectFile();
-
-        ConfigureWhenWeaversFound();
-
-        ConfigureWhenNoWeaversFound();
-
-        Logger.LogDebug($"Finished finding weavers {stopwatch.ElapsedMilliseconds}ms");
-    }
-
-    void ExecuteInOwnAppDomain()
-    {
-        AppDomain appDomain;
-        if (solutionDomains.TryGetValue(SolutionDirectory, out appDomain))
+        foreach (var weaver in Weavers)
         {
-            if (WeaversHistory.HasChanged(Weavers.Select(x => x.AssemblyPath)))
+            if (ConfigEntries.TryGetValue(weaver.ElementName, out var config))
             {
-                Logger.LogDebug("A Weaver HasChanged so loading a new AppDomain");
-                AppDomain.Unload(appDomain);
-                appDomain = solutionDomains[SolutionDirectory] = CreateDomain();
+                weaver.Element = config.Content;
+                weaver.ConfigurationSource = config.ConfigFile.FilePath ?? "MSBuild property";
+                weaver.ExecutionOrder = config.ExecutionOrder;
+            }
+            else
+            {
+                Logger.LogWarning($"No configuration entry found for the installed weaver {weaver.ElementName}. This weaver will be skipped. You may want to add this weaver to your FodyWeavers.xml");
             }
         }
-        else
-        {
-            appDomain = solutionDomains[SolutionDirectory] = CreateDomain();
-        }
 
-        var assemblyFile = Path.Combine(AssemblyLocation.CurrentDirectory, "FodyIsolated.dll");
-        using (innerWeaver = (IInnerWeaver)appDomain.CreateInstanceFromAndUnwrap(assemblyFile, "InnerWeaver"))
+        ConfigFileFinder.EnsureSchemaIsUpToDate(ProjectDirectory, Weavers, GenerateXsd);
+
+        Weavers = Weavers
+            .Where(weaver => weaver.Element != null)
+            .OrderBy(weaver => weaver.ExecutionOrder)
+            .ToList();
+
+        lock (mutex)
+        {
+            ExecuteInOwnAssemblyLoadContext();
+        }
+    }
+
+    void ExecuteInOwnAssemblyLoadContext()
+    {
+        var loadContext = GetLoadContext();
+
+        using (innerWeaver = loadContext.CreateInstanceFromAndUnwrap())
         {
             innerWeaver.AssemblyFilePath = AssemblyFilePath;
             innerWeaver.References = References;
             innerWeaver.KeyFilePath = KeyFilePath;
             innerWeaver.ReferenceCopyLocalPaths = ReferenceCopyLocalPaths;
+            innerWeaver.RuntimeCopyLocalPaths = RuntimeCopyLocalPaths;
             innerWeaver.SignAssembly = SignAssembly;
+            innerWeaver.DelaySign = DelaySign;
             innerWeaver.Logger = Logger;
             innerWeaver.SolutionDirectoryPath = SolutionDirectory;
             innerWeaver.Weavers = Weavers;
             innerWeaver.IntermediateDirectoryPath = IntermediateDirectory;
             innerWeaver.DefineConstants = DefineConstants;
             innerWeaver.ProjectDirectoryPath = ProjectDirectory;
-            innerWeaver.DebugSymbols = DebugSymbols;
+            innerWeaver.ProjectFilePath = ProjectFilePath;
+            innerWeaver.DocumentationFilePath = DocumentationFilePath;
 
             innerWeaver.Execute();
+
+            ReferenceCopyLocalPaths = innerWeaver.ReferenceCopyLocalPaths;
+            RuntimeCopyLocalPaths = innerWeaver.RuntimeCopyLocalPaths;
         }
         innerWeaver = null;
     }
 
-    AppDomain CreateDomain()
+    IsolatedAssemblyLoadContext GetLoadContext()
     {
-        Logger.LogDebug("Creating a new AppDomain");
-        var appDomainSetup = new AppDomainSetup
+        var assemblyPathSet = new AssemblyPathSet(Weavers.Select(weaver => weaver.AssemblyPath));
+
+        if (loadContexts.TryGetValue(assemblyPathSet, out var loadContext))
         {
-            ApplicationBase = AssemblyLocation.CurrentDirectory,
-        };
-        return AppDomain.CreateDomain($"Fody Domain for '{SolutionDirectory}'", null, appDomainSetup);
+            if (!WeaversHistory.HasChanged(assemblyPathSet.AssemblyPaths))
+            {
+                return loadContext;
+            }
+
+            Logger.LogDebug("A Weaver HasChanged so loading a new AssemblyLoadContext");
+            loadContext.Unload();
+        }
+
+        return loadContexts[assemblyPathSet] = CreateAssemblyLoadContext();
     }
 
-    public void Cancel()
+    IsolatedAssemblyLoadContext CreateAssemblyLoadContext()
     {
-        innerWeaver?.Cancel();
+        Logger.LogDebug("Creating a new AssemblyLoadContext");
+        return new();
     }
+
+    public void Cancel() =>
+        innerWeaver?.Cancel();
 }

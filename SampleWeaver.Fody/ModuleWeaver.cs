@@ -1,92 +1,152 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Xml.Linq;
-using Microsoft.Build.Framework;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using Fody;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using Mono.Cecil.Rocks;
 
-public class ModuleWeaver
+public class ModuleWeaver :
+    BaseModuleWeaver
 {
-    // Will contain the full element XML from FodyWeavers.xml. OPTIONAL
-    public XElement Config { get; set; }
-
-    // Will log an MessageImportance.Normal message to MSBuild. OPTIONAL
-    public Action<string> LogDebug { get; set; }
-
-    // Will log an MessageImportance.High message to MSBuild. OPTIONAL
-    public Action<string> LogInfo  { get; set; }
-
-    // Will log a message to MSBuild. OPTIONAL
-    public Action<string, MessageImportance> LogMessage  { get; set; }
-
-    // Will log an warning message to MSBuild. OPTIONAL
-    public Action<string> LogWarning  { get; set; }
-
-    // Will log an warning message to MSBuild at a specific point in the code. OPTIONAL
-    public Action<string, SequencePoint> LogWarningPoint { get; set; }
-
-    // Will log an error message to MSBuild. OPTIONAL
-    public Action<string> LogError { get; set; }
-
-    // Will log an error message to MSBuild at a specific point in the code. OPTIONAL
-    public Action<string, SequencePoint> LogErrorPoint { get; set; }
-
-    // An instance of Mono.Cecil.IAssemblyResolver for resolving assembly references. OPTIONAL
-    public IAssemblyResolver AssemblyResolver { get; set; }
-
-    // An instance of Mono.Cecil.ModuleDefinition for processing. REQUIRED
-    public ModuleDefinition ModuleDefinition { get; set; }
-
-    // Will contain the full path of the target assembly. OPTIONAL
-    public string AssemblyFilePath { get; set; }
-
-    // Will contain the full directory path of the target project.
-    // A copy of $(ProjectDir). OPTIONAL
-    public string ProjectDirectoryPath { get; set; }
-
-    // Will contain the full directory path of the current weaver. OPTIONAL
-    public string AddinDirectoryPath { get; set; }
-
-    // Will contain the full directory path of the current solution.
-    // A copy of `$(SolutionDir)` or, if it does not exist, a copy of `$(MSBuildProjectDirectory)..\..\..\`. OPTIONAL
-    public string SolutionDirectoryPath { get; set; }
-
-    // Will contain a semicolon delimited string that contains
-    // all the references for the target project.
-    // A copy of the contents of the @(ReferencePath). OPTIONAL
-    public string References { get; set; }
-
-    // Will a list of all the references marked as copy-local.
-    // A copy of the contents of the @(ReferenceCopyLocalPaths). OPTIONAL
-    public List<string> ReferenceCopyLocalPaths { get; set; }
-
-    // Will a list of all the msbuild constants.
-    // A copy of the contents of the $(DefineConstants). OPTIONAL
-    public List<string> DefineConstants { get; set; }
-
-    // Init logging delegates to make testing easier
-    public ModuleWeaver()
+    public override void Execute()
     {
-        LogDebug = m => { };
-        LogInfo = m => { };
-        LogWarning = m => { };
-        LogWarningPoint = (m,p) => { };
-        LogError = m => { };
-        LogErrorPoint = (m, p) => { };
+        ValidateSymbols();
+
+        var type = new TypeDefinition("SampleWeaverTest", "Configuration", TypeAttributes.Class | TypeAttributes.NotPublic | TypeAttributes.Sealed | TypeAttributes.Abstract | TypeAttributes.AutoClass | TypeAttributes.AnsiClass, TypeSystem.ObjectReference);
+        var contentField = new FieldDefinition("Content", FieldAttributes.Public | FieldAttributes.Static, TypeSystem.StringReference);
+        var propertyField = new FieldDefinition("PropertyValue", FieldAttributes.Public | FieldAttributes.Static, TypeSystem.StringReference);
+        var method = new MethodDefinition(".cctor", MethodAttributes.Static | MethodAttributes.Private | MethodAttributes.HideBySig | MethodAttributes.RTSpecialName | MethodAttributes.SpecialName, TypeSystem.VoidReference);
+
+        var instructions = method.Body.Instructions;
+        instructions.Add(Instruction.Create(OpCodes.Ldstr, Config?.ToString() ?? "Missing"));
+        instructions.Add(Instruction.Create(OpCodes.Stsfld, contentField));
+        instructions.Add(Instruction.Create(OpCodes.Ldstr, Config?.Attribute("MyProperty")?.Value ?? "Missing"));
+        instructions.Add(Instruction.Create(OpCodes.Stsfld, propertyField));
+        instructions.Add(Instruction.Create(OpCodes.Ret));
+
+        type.Fields.Add(contentField);
+        type.Fields.Add(propertyField);
+        type.Methods.Add(method);
+        ModuleDefinition.Types.Add(type);
+
+        var intermediateFolder = Path.GetDirectoryName(ModuleDefinition.FileName);
+        var additionalFilePath = Path.Combine(intermediateFolder, "SomeExtraFile.txt");
+
+        File.WriteAllText(additionalFilePath, DateTime.Now.ToString(CultureInfo.InvariantCulture));
+        ReferenceCopyLocalPaths.Add(additionalFilePath);
+
+        var customAttributes = ModuleDefinition.Assembly.CustomAttributes;
+
+        var sampleAttr = customAttributes.FirstOrDefault(attr => attr.AttributeType.Name == "SampleAttribute");
+        if (sampleAttr == null)
+        {
+            return;
+        }
+
+        customAttributes.Remove(sampleAttr);
+        var filePath = sampleAttr.AttributeType.Resolve().Module.FileName;
+
+        ReferenceCopyLocalPaths.Remove(filePath);
+        ReferenceCopyLocalPaths.Remove(Path.ChangeExtension(filePath, ".pdb"));
+        ReferenceCopyLocalPaths.Remove(Path.ChangeExtension(filePath, ".xml"));
+
+        RuntimeCopyLocalPaths.Remove(filePath);
+        RuntimeCopyLocalPaths.Remove(Path.ChangeExtension(filePath, ".pdb"));
+        RuntimeCopyLocalPaths.Remove(Path.ChangeExtension(filePath, ".xml"));
+
+        // Do not use ShouldCleanReference in order to test the above code
+        var assemblyRef = ModuleDefinition.AssemblyReferences.FirstOrDefault(_ => _.Name == "SampleWeaver");
+        if (assemblyRef != null)
+        {
+            ModuleDefinition.AssemblyReferences.Remove(assemblyRef);
+        }
     }
 
-    public void Execute()
+    void ValidateSymbols()
     {
-        ModuleDefinition.Types.Add(new TypeDefinition("MyNamespace", "MyType", TypeAttributes.Public));
+        const string SymbolValidationAttributeTypeName = "SampleWeaver.SymbolValidationAttribute";
+        const string SymbolValidationAttributePropertyName = "HasSymbols";
+
+        LogInfo("Validate Symbols");
+
+        var methodInfos = GetMethodInfos(SymbolValidationAttributeTypeName).ToList();
+
+        if (!methodInfos.Any())
+        {
+            LogInfo("Assembly has no method with a [SymbolValidation] attribute, symbol validation skipped");
+            return;
+        }
+
+        foreach (var methodInfo in methodInfos)
+        {
+            LogInfo("Validating method " + methodInfo.Method.FullName);
+
+            var shouldHaveSymbols = methodInfo.Attribute.GetPropertyValue(SymbolValidationAttributePropertyName, true);
+            LogInfo("Assembly should have symbols: " + shouldHaveSymbols);
+
+            var hasSymbols = HasSymbols(methodInfo.Method);
+            LogInfo("Assembly has symbols: " + hasSymbols);
+
+            if (shouldHaveSymbols != hasSymbols)
+            {
+                LogError($"Unexpected symbols in assembly {ModuleDefinition.FileName}, should have: {shouldHaveSymbols}, but has: {hasSymbols}");
+            }
+        }
     }
 
-    // Will be called when a request to cancel the build occurs. OPTIONAL
-    public void Cancel()
+    IEnumerable<MethodInfos> GetMethodInfos(string symbolValidationAttributeTypeName) =>
+        from type in ModuleDefinition.GetTypes()
+        where type.IsClass
+        from method in type.GetMethods()
+        let attribute = method.ConsumeAttribute(symbolValidationAttributeTypeName)
+        where attribute != null
+        select new MethodInfos(method, attribute);
+
+    bool HasSymbols(MethodDefinition method) =>
+        ModuleDefinition.SymbolReader?.Read(method)?.HasSequencePoints == true;
+
+    public override IEnumerable<string> GetAssembliesForScanning()
     {
+        yield break;
     }
 
-    // Will be called after all weaving has occurred and the module has been saved. OPTIONAL
-    public void AfterWeaving()
+    // Do not use ShouldCleanReference in order to test the above code
+    public override bool ShouldCleanReference => false;
+}
+
+class MethodInfos
+{
+    public MethodDefinition Method { get; }
+    public CustomAttribute Attribute { get; }
+
+    public MethodInfos(MethodDefinition method, CustomAttribute attribute)
     {
+        Method = method;
+        Attribute = attribute;
     }
+}
+
+static class AttributeExtensionMethods
+{
+    public static CustomAttribute? ConsumeAttribute(this ICustomAttributeProvider attributeProvider, string attributeName)
+    {
+        var attributes = attributeProvider.CustomAttributes;
+        var matches = attributes.Where(attribute => attribute.Constructor.DeclaringType.FullName == attributeName).ToList();
+
+        foreach (var match in matches)
+        {
+            attributes.Remove(match);
+        }
+
+        return matches.FirstOrDefault();
+    }
+
+    public static T GetPropertyValue<T>(this CustomAttribute attribute, string propertyName, T defaultValue) =>
+        attribute.Properties.Where(_ => _.Name == propertyName)
+            .Select(p => (T)p.Argument.Value)
+            .DefaultIfEmpty(defaultValue)
+            .Single();
 }

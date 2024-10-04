@@ -1,0 +1,17 @@
+image: Visual Studio 2022
+install:
+- cmd: git submodule update --init --recursive
+environment:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+build_script:
+- cmd: |
+    msbuild -restore Fody.sln /p:Configuration=Release /verbosity:minimal
+    msbuild -restore Integration\Integration.sln /p:Configuration=Release /verbosity:minimal
+    msbuild Integration\Tests\Tests.csproj /target:Restore
+test:
+  assemblies:
+    - '**\*Tests.dll'
+artifacts:
+- path: nugets\*.nupkg

@@ -1,10 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-
 public static class WeaversHistory
 {
-    public static Dictionary<string, DateTime> TimeStamps = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+    public static Dictionary<string, DateTime> TimeStamps = new(StringComparer.OrdinalIgnoreCase);
 
     public static bool HasChanged(IEnumerable<string> weaverPaths)
     {
@@ -12,8 +8,7 @@ public static class WeaversHistory
         foreach (var weaverPath in weaverPaths)
         {
             var newVersion = File.GetLastWriteTimeUtc(weaverPath);
-            DateTime dateTime;
-            if (TimeStamps.TryGetValue(weaverPath, out dateTime))
+            if (TimeStamps.TryGetValue(weaverPath, out var dateTime))
             {
                 if (dateTime != newVersion)
                 {

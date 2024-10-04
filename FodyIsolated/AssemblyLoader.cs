@@ -1,38 +1,33 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Reflection;
-
 public partial class InnerWeaver
 {
-    static Dictionary<string, Assembly> assemblies = new Dictionary<string, Assembly>(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, Assembly> assemblies = new(StringComparer.OrdinalIgnoreCase);
 
-    public virtual Assembly LoadAssembly(string assemblyPath)
+    public Assembly LoadWeaverAssembly(string assemblyPath)
     {
-        Assembly assembly;
-        if (assemblies.TryGetValue(assemblyPath, out assembly))
+        if (assemblies.TryGetValue(assemblyPath, out var assembly))
         {
             Logger.LogDebug($"  Loading '{assemblyPath}' from cache.");
             return assembly;
         }
+
         Logger.LogDebug($"  Loading '{assemblyPath}' from disk.");
         return assemblies[assemblyPath] = LoadFromFile(assemblyPath);
     }
 
-    public static Assembly LoadFromFile(string assemblyPath)
+    Assembly LoadFromFile(string assemblyPath)
     {
-        var pdbPath = Path.ChangeExtension(assemblyPath, "pdb");
-        var rawAssembly = File.ReadAllBytes(assemblyPath);
-        if (File.Exists(pdbPath))
+        try
         {
-            return Assembly.Load(rawAssembly, File.ReadAllBytes(pdbPath));
+#if NETSTANDARD
+            return LoadContext.LoadNotLocked(assemblyPath);
+#else
+            var rawAssembly = File.ReadAllBytes(assemblyPath);
+            return Assembly.Load(rawAssembly);
+#endif
         }
-        var mdbPath = Path.ChangeExtension(assemblyPath, "mdb");
-        if (File.Exists(mdbPath))
+        catch (Exception ex)
         {
-            return Assembly.Load(rawAssembly, File.ReadAllBytes(mdbPath));
+            throw new WeavingException($"Could not load weaver assembly from {assemblyPath}: {ex.Message}");
         }
-        return Assembly.Load(rawAssembly);
     }
-
 }

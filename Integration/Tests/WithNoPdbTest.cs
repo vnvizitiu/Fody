@@ -1,12 +1,11 @@
-﻿using NUnit.Framework;
+﻿using Xunit;
 using WithNoPdb;
 
-[TestFixture]
 public class WithNoPdbTest
 {
-    [Test]
+    [Fact]
     public void EnsureTypeChangedByNugetWeaver()
     {
-        Assert.IsTrue(typeof(Class1).GetMethod("Method").IsVirtual);
+        Assert.True(typeof(Class1).GetMethod("Method").IsVirtual);
     }
 }

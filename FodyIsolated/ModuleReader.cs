@@ -1,34 +1,42 @@
-using System.IO;
-using Mono.Cecil;
-
 public partial class InnerWeaver
 {
-    public ModuleDefinition ModuleDefinition;
-    public FileStream SymbolStream;
+    public ModuleDefinition ModuleDefinition = null!;
+    bool hasSymbols;
 
-    public virtual void ReadModule()
+    public void ReadModule()
     {
-        var tempAssembly = $"{AssemblyFilePath}.tmp";
-        File.Copy(AssemblyFilePath, tempAssembly, true);
-
-        if (debugReaderProvider != null)
+        var result = ReadModule(AssemblyFilePath, assemblyResolver);
+        hasSymbols = result.hasSymbols;
+        if (!hasSymbols)
         {
-            var symbolsPath = pdbFound ? pdbPath : mdbPath;
-            var tempSymbols = $"{symbolsPath}.tmp";
-            if (File.Exists(symbolsPath))
-            {
-                File.Copy(symbolsPath, tempSymbols, true);
-                SymbolStream = File.OpenRead(tempSymbols);
-            }
+            Logger.LogInfo("Module has no debug symbols.");
         }
 
+        ModuleDefinition = result.module;
+    }
+
+    public static (ModuleDefinition module, bool hasSymbols) ReadModule(
+        string assemblyFilePath,
+        IAssemblyResolver assemblyResolver)
+    {
         var readerParameters = new ReaderParameters
         {
             AssemblyResolver = assemblyResolver,
-            ReadSymbols = SymbolStream != null,
-            SymbolReaderProvider = debugReaderProvider,
-            SymbolStream = SymbolStream,
+            InMemory = true
         };
-        ModuleDefinition = ModuleDefinition.ReadModule(tempAssembly, readerParameters);
+
+        var module = ModuleDefinition.ReadModule(assemblyFilePath, readerParameters);
+
+        var hasSymbols = false;
+        try
+        {
+            module.ReadSymbols();
+            hasSymbols = true;
+        }
+        catch
+        {
+        }
+
+        return (module, hasSymbols);
     }
 }

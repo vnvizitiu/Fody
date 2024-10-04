@@ -1,10 +1,9 @@
 using System;
 
-public class WeavingException : Exception
+class WeavingException : Exception
 {
     public WeavingException(string message)
         : base(message)
     {
-
     }
 }
